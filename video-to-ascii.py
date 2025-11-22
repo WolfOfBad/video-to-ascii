@@ -18,7 +18,7 @@ if not use_ansi_escape_sequences:
 
     console_handle = ctypes.windll.kernel32.GetStdHandle(c_long(-11))
 
-video_columns, video_lines = 140, 70
+video_columns, video_lines = 140, 45
 
 def set_console_size(columns, lines):
     os.system(f'mode con cols={columns} lines={lines} ')
@@ -37,12 +37,14 @@ selected_video_number = input('\nВведите номер видео: ')
 
 try:
     fps = int(input("Required FPS:"))
-    has_inverted_colors = bool(input("Inverted colors?(True:False):"))
-    loop = bool(input("Loop Video?(True:False):"))
 except:
     fps = 30
+try:
+    has_inverted_colors = input("Inverted colors?: ").strip().lower() != "false"
+    loop = input("Loop video?: ").strip().lower() == "true"
+except:
     has_inverted_colors = True
-    loop = False
+    loop = True
 
 try:
     selected_video = videos[int(selected_video_number) - 1]
