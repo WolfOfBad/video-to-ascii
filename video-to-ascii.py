@@ -1,7 +1,7 @@
 import os
 import sys
 import subprocess
-from time import sleep
+import time
 import glob
 import cv2
 from PIL import Image
@@ -9,22 +9,22 @@ from PIL import Image
 ESC = b'\033'
 CSI = ESC + b'['
 
-# Use ANSI escape sequences (macOS/Linux/modern Windows)
+# macOS/Linux/Windows ANSI
 use_ansi_escape_sequences = True
 
 video_columns, video_lines = 140, 45
 
 
-def set_console_size(columns, lines):
-    # macOS does not support `mode con`, so we only clear the screen
+def clear_console():
     print("\033[2J\033[1;1H", end='')
 
 
-# Clear console
-os.system('clear')
+# Очистка
+clear_console()
 
-selected_video_number = 0
-
+# ---------------------------------------------
+#  ВЫБОР ВИДЕО
+# ---------------------------------------------
 videos = glob.glob('*.mp4')
 
 if not videos:
@@ -42,16 +42,15 @@ except:
     print(f'{selected_video_number} - неверный номер X_X')
     exit()
 
-
-# ----------------------------- #
-#     ОТКРЫВАЕМ ВИДЕО
-# ----------------------------- #
+# ---------------------------------------------
+#  ОТКРЫВАЕМ ВИДЕО И БЕРЁМ FPS
+# ---------------------------------------------
 vidcap = cv2.VideoCapture(selected_video)
-
-# ---------- AUTO FPS ----------
 fps = vidcap.get(cv2.CAP_PROP_FPS)
+
 if fps is None or fps <= 0:
-    fps = 30  # fallback
+    fps = 30
+
 print(f"\nAuto FPS detected: {fps}")
 
 success, image = vidcap.read()
@@ -59,47 +58,62 @@ if not success:
     print("Не удалось открыть видео!")
     exit()
 
-
-# INPUT SETTINGS (BOOLEAN FIX)
+# ---------------------------------------------
+#  INPUT SETTINGS (FIXED)
+# ---------------------------------------------
 has_inverted_colors = input("Inverted colors? (true/false): ").strip().lower() != "false"
 loop = input("Loop video? (true/false): ").strip().lower() != "false"
 
-
-# ----------------------------- #
-#     ЗАПУСК ЗВУКА (ffplay)
-# ----------------------------- #
+# ---------------------------------------------
+#  ЗАПУСК АУДИО (ffplay)
+# ---------------------------------------------
 print("\nЗапуск аудио…")
-
 audio_process = subprocess.Popen(
     ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", selected_video]
 )
 
-
-# ----------------------------- #
-#     ASCII РЕНДЕР
-# ----------------------------- #
-
-set_console_size(video_columns, video_lines)
+# ---------------------------------------------
+#  ASCII ПОДГОТОВКА
+# ---------------------------------------------
+clear_console()
 
 symbols = list(r'$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1[]?-_+~<>i!lI;:,   ')
-
 if has_inverted_colors:
     symbols.reverse()
 
 stdout = os.fdopen(sys.stdout.fileno(), 'wb', video_columns * video_lines * 2)
 
+# ---------------------------------------------
+#  ГЛАВНЫЙ ЦИКЛ — ИДЕАЛЬНАЯ СИНХРОНИЗАЦИЯ
+# ---------------------------------------------
+start_time = time.time()
+frame_index = 0
+
 try:
     while True:
         success, image = vidcap.read()
 
-        # Loop video
+        # ---------------------------------
+        #  ЛУП ВИДЕО + ПЕРЕЗАПУСК ЗВУКА
+        # ---------------------------------
         if not success:
             if loop:
                 vidcap = cv2.VideoCapture(selected_video)
-                continue
+                success, image = vidcap.read()
+
+                audio_process.kill()
+                audio_process = subprocess.Popen(
+                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", selected_video]
+                )
+
+                start_time = time.time()
+                frame_index = 0
             else:
                 break
 
+        # ---------------------------------
+        #  ASCII РЕНДЕР КАДРА
+        # ---------------------------------
         im = Image.fromarray(image)
         im = im.resize((video_columns, video_lines))
         im = im.convert('L')
@@ -109,15 +123,24 @@ try:
 
         for y in range(video_lines):
             for x in range(video_columns):
-                result.append(symbols[int(pixels[x, y] / 36)])
+                result.append(symbols[pixels[x, y] // 36])
             result.append('\n')
 
-        # Move cursor to the top-left
         stdout.write(CSI + b'1;1H')
         stdout.write(''.join(result).encode())
         stdout.flush()
 
-        sleep(1 / fps)
+        # ---------------------------------
+        #  ИДЕАЛЬНАЯ СИНХРОНИЗАЦИЯ СО ЗВУКОМ
+        # ---------------------------------
+        target_time = start_time + (frame_index / fps)
+        now = time.time()
+
+        delay = target_time - now
+        if delay > 0:
+            time.sleep(delay)
+
+        frame_index += 1
 
 except KeyboardInterrupt:
     pass
